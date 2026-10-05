@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in – Swap</title>
+<meta name="description" content="Swap is a community driven space to share, love and care.">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f6f3;--sf:#fff;--ink:#1f2328;--mute:#6b7178;--line:#e4e4df;--acc:#3a4bb0;--on:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--sf:#1d2024;--ink:#ecedee;--mute:#9aa0a6;--line:#2c3036;--acc:#8c9bff;--on:#12142a}}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:16px/1.5 Figtree,system-ui,sans-serif;padding:20px}
+.box{width:100%;max-width:380px}h1{font-size:32px;letter-spacing:-.02em;margin:0}.tag{color:var(--mute);margin:4px 0 28px}
+button,input{font:inherit;color:inherit;width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:var(--sf)}
+input{margin-bottom:10px}button{cursor:pointer;font-weight:600}.go{background:var(--acc);color:var(--on);border:0;margin-top:4px}
+.oa{margin-top:10px}.or{text-align:center;color:var(--mute);font-size:14px;margin:18px 0 8px}
+.sw,.fg{background:none;border:0;color:var(--mute);width:auto;padding:0;font-weight:400;text-decoration:underline}.row{display:flex;justify-content:space-between;margin-top:16px;font-size:14px}
+#msg{min-height:1.4em;font-size:14px;margin-top:10px;color:#c0392b}#msg.ok{color:var(--acc)}:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style></head><body>
+<div class="box">
+<h1>Swap</h1><p class="tag">Community driven space to share, love and care</p>
+<div id="nm" hidden><input id="name" placeholder="Your name" autocomplete="name"></div>
+<input id="email" type="email" placeholder="Email" autocomplete="email">
+<input id="pw" type="password" placeholder="Password (min 8 characters)" autocomplete="current-password">
+<button class="go" id="go">Sign in</button>
+<div id="msg" role="status"></div>
+<div class="or">or continue with</div>
+<button class="oa" data-p="google">Google</button>
+<button class="oa" data-p="apple">Apple</button>
+<div class="row"><button class="sw" id="sw">Create an account</button><button class="fg" id="fg">Forgot password?</button></div>
+<p style="text-align:center;font-size:13px;margin-top:24px"><a href="privacy.html" style="color:var(--mute)">Privacy</a></p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const sb=supabase.createClient(CFG.url,CFG.key),$=s=>document.querySelector(s);
+const home=location.href.replace(/login\.html.*$/,'index.html');
+let up=false;
+const say=(t,ok)=>{$('#msg').textContent=t;$('#msg').className=ok?'ok':''};
+sb.auth.getSession().then(({data})=>{if(data.session)location.href=home});
+$('#sw').onclick=()=>{up=!up;$('#nm').hidden=!up;$('#go').textContent=up?'Create account':'Sign in';$('#sw').textContent=up?'I already have an account':'Create an account';say('')};
+$('#go').onclick=async()=>{
+  const email=$('#email').value.trim(),password=$('#pw').value;
+  if(!email||password.length<8)return say('Enter your email and a password of at least 8 characters.');
+  say('Please wait…',true);
+  if(up){
+    const{data,error}=await sb.auth.signUp({email,password,options:{data:{full_name:$('#name').value.trim()},emailRedirectTo:home}});
+    if(error)return say(error.message);
+    if(data.session)location.href=home;else say('Check your email to confirm your account, then sign in.',true);
+  }else{
+    const{error}=await sb.auth.signInWithPassword({email,password});
+    if(error)return say(error.message);location.href=home;
+  }
+};
+$('#fg').onclick=async()=>{
+  const email=$('#email').value.trim();if(!email)return say('Enter your email first.');
+  const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:home});
+  error?say(error.message):say('Password reset link sent. Check your email.',true);
+};
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>sb.auth.signInWithOAuth({provider:b.dataset.p,options:{redirectTo:home}}));
+</script></body></html>
