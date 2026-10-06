@@ -14,17 +14,17 @@ input{margin-bottom:10px}button{cursor:pointer;font-weight:600}.go{background:va
 .oa{margin-top:10px}.or{text-align:center;color:var(--mute);font-size:14px;margin:18px 0 8px}
 .sw,.fg{background:none;border:0;color:var(--mute);width:auto;padding:0;font-weight:400;text-decoration:underline}.row{display:flex;justify-content:space-between;margin-top:16px;font-size:14px}
 #msg{min-height:1.4em;font-size:14px;margin-top:10px;color:#c0392b}#msg.ok{color:var(--acc)}:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.pwr{position:relative}.pwr button{position:absolute;right:6px;top:6px;width:auto;padding:5px 10px;border:0;background:none;color:var(--mute);font-weight:500}
 </style></head><body>
 <div class="box">
 <h1>Swap</h1><p class="tag">Community driven space to share, love and care</p>
 <div id="nm" hidden><input id="name" placeholder="Your name" autocomplete="name"></div>
 <input id="email" type="email" placeholder="Email" autocomplete="email">
-<input id="pw" type="password" placeholder="Password (min 8 characters)" autocomplete="current-password">
+<div class="pwr"><input id="pw" type="password" placeholder="Password (min 8 characters)" autocomplete="current-password"><button type="button" id="eye" aria-label="Show password">Show</button></div>
 <button class="go" id="go">Sign in</button>
 <div id="msg" role="status"></div>
 <div class="or">or continue with</div>
 <button class="oa" data-p="google">Google</button>
-<button class="oa" data-p="apple">Apple</button>
 <div class="row"><button class="sw" id="sw">Create an account</button><button class="fg" id="fg">Forgot password?</button></div>
 <p style="text-align:center;font-size:13px;margin-top:24px"><a href="privacy.html" style="color:var(--mute)">Privacy</a></p>
 </div>
@@ -36,6 +36,7 @@ const home=location.href.replace(/login\.html.*$/,'index.html');
 let up=false;
 const say=(t,ok)=>{$('#msg').textContent=t;$('#msg').className=ok?'ok':''};
 sb.auth.getSession().then(({data})=>{if(data.session)location.href=home});
+$('#eye').onclick=()=>{const p=$('#pw'),s=p.type=='password';p.type=s?'text':'password';$('#eye').textContent=s?'Hide':'Show'};
 $('#sw').onclick=()=>{up=!up;$('#nm').hidden=!up;$('#go').textContent=up?'Create account':'Sign in';$('#sw').textContent=up?'I already have an account':'Create an account';say('')};
 $('#go').onclick=async()=>{
   const email=$('#email').value.trim(),password=$('#pw').value;

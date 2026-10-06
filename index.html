@@ -41,9 +41,10 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
 .log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px}.m{max-width:75%;padding:8px 12px;border-radius:14px;background:var(--soft);align-self:flex-start;overflow-wrap:anywhere}.m.me{background:var(--acc);color:var(--on);align-self:flex-end}
 .send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}.none{margin:auto;color:var(--mute);padding:20px;text-align:center}
 .rv{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5484d;margin-left:6px;vertical-align:middle}.chat,.log,.tl{min-height:0}.msgs{grid-template-rows:minmax(0,1fr)}.acts{flex-wrap:wrap}select.loc{width:auto;min-width:150px}
 @media (max-width:700px){header .wrap{gap:6px}.pill,.brand small{display:none}.tab{padding:8px}.msgs{grid-template-columns:1fr}.msgs.has-t .tl{display:none}.msgs:not(.has-t) .chat{display:none}.back{display:block}}
 </style></head><body>
-<header><div class="wrap"><div class="brand">Swap<small>Community driven space to share, love and care</small></div><nav id="nav"></nav><span id="vs" class="pill"></span><button class="tab" id="out">Sign out</button></div></header>
+<header><div class="wrap"><div class="brand">Swap<small>Community driven space to share, love and care</small></div><nav id="nav"></nav><span id="vs" class="pill"></span><button class="tab" id="acct">Account</button><button class="tab" id="out">Sign out</button></div></header>
 <main><div class="wrap" id="main"></div></main><div id="modal"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
@@ -52,15 +53,18 @@ const CATS=["Electronics","Books","Clothing & accessories","Home & kitchen","Fur
 const CONDS=["New","Like new","Good","Used"],IDS=["Aadhaar","Driving licence","PAN card","Passport"];
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sb=supabase.createClient(CFG.url,CFG.key);
-const S={items:[],threads:[],pend:[],view:'browse',cat:'All',q:'',tid:null,msgs:[],modal:null};
+const S={items:[],threads:[],pend:[],view:'browse',cat:'All',q:'',tid:null,msgs:[],modal:null,loc:'All'};
 let me,prof={},ver=null,P={},ch=null;
 const nm=id=>id===me.id?'You':(P[id]?.name||'Member'),pu=p=>p?sb.storage.from('item-photos').getPublicUrl(p).data.publicUrl:'';
+const mySeen=t=>new Date(t.owner===me.id?t.owner_seen:t.buyer_seen),unread=t=>t.last_sender&&t.last_sender!==me.id&&new Date(t.last_at)>mySeen(t),unreadAny=()=>S.threads.some(unread);
+async function seen(t){t[t.owner===me.id?'owner_seen':'buyer_seen']=new Date().toISOString();await sb.rpc('mark_seen',{tid:t.id})}
 const vlabel=()=>prof.verified?'ID verified':ver?(ver.status=='rejected'?'ID rejected – resubmit':'ID under review'):'ID needed';
 
 async function init(){
   const{data:{session}}=await sb.auth.getSession();
   if(!session)return location.href='login.html';
-  me=session.user;await load();render();
+  me=session.user;await load();const mc=(prof.city||'').trim().toLowerCase();S.loc=mc&&S.items.some(i=>(i.city||'').trim().toLowerCase()==mc)?prof.city.trim():'All';render();
+  sb.channel('th').on('postgres_changes',{event:'*',schema:'public',table:'threads'},async()=>{S.threads=(await sb.from('threads').select('*,items(title)').order('last_at',{ascending:false})).data||[];const t=S.threads.find(x=>x.id==S.tid);if(S.view=='messages'&&t&&unread(t))seen(t);render(1)}).subscribe();
 }
 async function load(){
   const[pr,it,v,th]=await Promise.all([sb.from('profiles').select('*'),sb.from('items').select('*').order('created_at',{ascending:false}),
@@ -68,33 +72,34 @@ async function load(){
   P={};(pr.data||[]).forEach(p=>P[p.id]=p);prof=P[me.id]||{};S.items=it.data||[];ver=v.data;S.threads=th.data||[];
   if(prof.is_admin)S.pend=(await sb.from('verifications').select('*').eq('status','pending')).data||[];
 }
+$('#acct').onclick=()=>open_('acct');
 $('#out').onclick=async()=>{await sb.auth.signOut();location.href='login.html'};
-function render(){
+function render(k){
   const tabs=[['browse','Browse'],['mine','My items'],['messages','Messages']];if(prof.is_admin)tabs.push(['review','Review IDs']);
-  $('#nav').innerHTML=tabs.map(([v,l])=>`<button class="tab" data-a="nav" data-v="${v}" aria-current="${S.view===v}">${l}</button>`).join('');
+  $('#nav').innerHTML=tabs.map(([v,l])=>`<button class="tab" data-a="nav" data-v="${v}" aria-current="${S.view===v}">${l}${v=='messages'&&unreadAny()?'<span class="dot" aria-label="New messages"></span>':''}</button>`).join('');
   const v=$('#vs');v.textContent=vlabel();v.className='pill'+(prof.verified?' ok':'');v.onclick=()=>{if(!prof.verified&&!(ver&&ver.status=='pending'))open_('verify')};
-  main();modal();
+  main();if(!k)modal();
 }
 function keep(f){const a=document.activeElement,id=a&&a.id,val=a&&a.value,p=a&&a.selectionStart;f();if(id=='q'||id=='say'){const e=document.getElementById(id);if(e){e.value=val;e.focus();try{e.setSelectionRange(p,p)}catch(_){}}}}
-const card=i=>`<button class="card" data-a="open" data-id="${i.id}"><div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><div class="cb"><b>${esc(i.title)}</b><span>${esc(i.condition)} · ${esc(i.category)}</span><span>Wants: ${esc(i.want||'open to offers')}</span></div></button>`;
+const card=i=>`<button class="card" data-a="open" data-id="${i.id}"><div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><div class="cb"><b>${esc(i.title)}</b><span>${esc(i.condition)} · ${esc(i.category)}${i.city?' · '+esc(i.city):''}</span><span>Wants: ${esc(i.want||'open to offers')}</span></div></button>`;
 function main(){keep(()=>{
   const m=$('#main');
   const bn=prof.verified?'':`<div class="banner"><span>${ver&&ver.status=='pending'?'Your ID is being reviewed. You can browse until it is approved.':'Verify your ID to post items and send messages.'}</span>${ver&&ver.status=='pending'?'':'<button class="btn sm" data-a="verify">Verify ID</button>'}</div>`;
   if(S.view=='browse'){
-    const q=S.q.toLowerCase(),l=S.items.filter(i=>(S.cat=='All'||i.category==S.cat)&&(!q||(i.title+' '+(i.description||'')+' '+(i.want||'')).toLowerCase().includes(q)));
+    const cities=[...new Map(S.items.filter(i=>i.city&&i.status!='given').map(i=>[i.city.trim().toLowerCase(),i.city.trim()])).values()].sort(),q=S.q.toLowerCase(),l=S.items.filter(i=>i.status!='given'&&(S.cat=='All'||i.category==S.cat)&&(S.loc=='All'||(i.city||'').trim().toLowerCase()==S.loc.toLowerCase())&&(!q||(i.title+' '+(i.description||'')+' '+(i.want||'')).toLowerCase().includes(q)));
     m.innerHTML=`${bn}<h1>Browse items</h1><p class="sub">A community driven space to share, love and care. Find something you need and offer a swap.</p>
-    <div class="row"><input id="q" class="search" type="search" placeholder="Search items" value="${esc(S.q)}" aria-label="Search items"><button class="btn" data-a="post">Post an item</button></div>
+    <div class="row"><input id="q" class="search" type="search" placeholder="Search items" value="${esc(S.q)}" aria-label="Search items"><select id="loc" class="loc" aria-label="Location"><option value="All">All locations</option>${cities.map(c=>`<option ${c.toLowerCase()==S.loc.toLowerCase()?'selected':''}>${esc(c)}</option>`).join('')}</select><button class="btn" data-a="post">Post an item</button></div>
     <div class="chips">${['All',...CATS].map(c=>`<button class="chip" data-a="cat" data-c="${esc(c)}" aria-pressed="${S.cat===c}">${esc(c)}</button>`).join('')}</div>
     ${l.length?`<div class="grid">${l.map(card).join('')}</div>`:`<div class="empty">${S.items.length?'No items match. Try another category or search.':'Nothing posted yet. Be the first to list an item.'}</div>`}`;
   }else if(S.view=='mine'){
-    const l=S.items.filter(i=>i.owner===me.id);
+    const l=S.items.filter(i=>i.owner===me.id&&i.status!='given');
     m.innerHTML=`${bn}<h1>My items</h1><p class="sub">Items you have offered for swapping.</p>${l.length?`<div class="grid">${l.map(card).join('')}</div>`:`<div class="empty">You haven't posted anything yet.<br><button class="btn" data-a="post">Post an item</button></div>`}`;
   }else if(S.view=='review'){
     m.innerHTML=`<h1>Review IDs</h1><p class="sub">Approve members after checking their ID photo.</p>${S.pend.length?S.pend.map(v=>`<div class="rv"><div><b>${esc(nm(v.user_id))}</b><div class="note" style="margin:0">${esc(v.id_type)} · ends ${esc(v.last4)}</div></div><div class="row"><button class="btn ghost sm" data-a="idview" data-p="${esc(v.file_path)}">View ID</button><button class="btn sm" data-a="rev" data-u="${v.user_id}" data-ok="1">Approve</button><button class="btn ghost sm" data-a="rev" data-u="${v.user_id}" data-ok="0">Reject</button></div></div>`).join(''):'<div class="empty">No IDs waiting for review.</div>'}`;
   }else{
     const t=S.threads.find(x=>x.id==S.tid),o=t&&(t.owner===me.id?t.buyer:t.owner);
     m.innerHTML=`<h1>Messages</h1><p class="sub">Private conversations about items. Only the two of you can see them.</p>
-    <div class="msgs ${S.tid?'has-t':''}"><div class="tl">${S.threads.length?S.threads.map(x=>`<button class="th" data-a="thread" data-t="${x.id}" aria-current="${x.id===S.tid}"><b>${esc(x.items?.title)}</b><span>${esc(nm(x.owner===me.id?x.buyer:x.owner))}</span></button>`).join(''):'<div class="none">No conversations yet. Open an item in Browse and tap Message.</div>'}</div>
+    <div class="msgs ${S.tid?'has-t':''}"><div class="tl">${S.threads.length?S.threads.map(x=>`<button class="th" data-a="thread" data-t="${x.id}" aria-current="${x.id===S.tid}"><b>${esc(x.items?.title)}${unread(x)?'<span class="dot" aria-label="New message"></span>':''}</b><span>${esc(nm(x.owner===me.id?x.buyer:x.owner))}</span></button>`).join(''):'<div class="none">No conversations yet. Open an item in Browse and tap Message.</div>'}</div>
     <div class="chat">${t?`<div class="ch"><button class="btn ghost sm back" data-a="back">Back</button><div><b>${esc(t.items?.title)}</b><div class="note" style="margin:0">with ${esc(nm(o))}</div></div></div>
     <div class="log" id="log">${S.msgs.length?S.msgs.map(x=>`<div class="m ${x.sender===me.id?'me':''}">${esc(x.body)}</div>`).join(''):'<div class="none">Say hello and propose a swap.</div>'}</div>
     <div class="send"><input id="say" placeholder="Write a message" aria-label="Message"><button class="btn" data-a="send">Send</button></div>`:'<div class="none">Select a conversation.</div>'}</div></div>`;
@@ -106,19 +111,20 @@ function open_(t,x){S.modal={t,...x};modal()}
 function modal(){
   const M=S.modal;if(!M){$('#modal').innerHTML='';return}
   if(M.t=='item'){const i=S.items.find(x=>x.id==M.id);if(!i)return;const mine=i.owner===me.id;
-    sheet(`<div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><h2>${esc(i.title)}</h2><p class="note" style="margin:0 0 12px">${esc(i.condition)} · ${esc(i.category)}</p>
+    sheet(`<div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><h2>${esc(i.title)}</h2><p class="note" style="margin:0 0 12px">${esc(i.condition)} · ${esc(i.category)}${i.city?' · '+esc(i.city):''}</p>
     <p style="margin:0 0 12px">${esc(i.description||'No description.')}</p><p style="margin:0 0 4px"><b>Wants:</b> ${esc(i.want||'open to offers')}</p>
     <p class="note" style="margin:0">Posted by ${esc(nm(i.owner))}${P[i.owner]?.verified?' · ID verified':''}</p>
-    <div class="acts"><button class="btn ghost" data-a="close">Close</button>${mine?`<button class="btn ghost" data-a="del" data-id="${i.id}">Remove</button>`:`<button class="btn" data-a="msg" data-id="${i.id}">Message</button>`}</div>`);}
-  else if(M.t=='post')sheet(`<h2>Post an item</h2><label for="f-t">Title</label><input id="f-t" maxlength="80" placeholder="e.g. Acoustic guitar">
+    <div class="acts"><button class="btn ghost" data-a="close">Close</button>${mine?`<button class="btn" data-a="given" data-id="${i.id}">Mark as given away</button><button class="btn ghost" data-a="del" data-id="${i.id}">Remove</button>`:`<button class="btn" data-a="msg" data-id="${i.id}">Message</button>`}</div>`);}
+  else if(M.t=='post')sheet(`<h2>Post an item</h2><p class="note" style="margin:0">You don't have to swap with the same person: give your item to one member and take something from another.</p><label for="f-t">Title</label><input id="f-t" maxlength="80" placeholder="e.g. Acoustic guitar">
     <label for="f-c">Category</label><select id="f-c">${CATS.map(c=>`<option>${esc(c)}</option>`).join('')}</select><label for="f-d">Condition</label><select id="f-d">${CONDS.map(c=>`<option>${c}</option>`).join('')}</select>
     <label for="f-x">Description</label><textarea id="f-x" maxlength="500"></textarea><label for="f-w">What would you like in return?</label><input id="f-w" maxlength="100" placeholder="e.g. Books, or open to offers">
-    <label for="f-p">Photo (optional)</label><input id="f-p" type="file" accept="image/*"><div class="err" id="er"></div>
+    <label for="f-l">City or area</label><input id="f-l" maxlength="60" value="${esc(prof.city)}" placeholder="e.g. Ludhiana"><label for="f-p">Photo (optional)</label><input id="f-p" type="file" accept="image/*"><div class="err" id="er"></div>
     <div class="acts"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="savepost">Post item</button></div>`);
   else if(M.t=='verify')sheet(`<h2>Verify your identity</h2><p class="note" style="margin:0">Submit one government ID. An admin reviews it, usually within a day.</p>
     <label for="v-t">ID type</label><select id="v-t">${IDS.map(c=>`<option>${c}</option>`).join('')}</select><label for="v-n">Last 4 characters of the ID number</label><input id="v-n" maxlength="4" autocomplete="off">
     <label for="v-p">Photo of the ID</label><input id="v-p" type="file" accept="image/*"><p class="note">For Aadhaar, cover the first 8 digits before uploading. Your ID photo is private: only you and the reviewing admin can open it.</p>
     <div class="err" id="er"></div><div class="acts"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="saveid">Submit ID</button></div>`);
+  else if(M.t=='acct')sheet(`<h2>Your account</h2><label for="a-n">Display name</label><input id="a-n" maxlength="40" value="${esc(prof.name)}"><label for="a-c">Your city or area</label><input id="a-c" maxlength="60" value="${esc(prof.city)}" placeholder="e.g. Ludhiana"><p class="note">${esc(me.email)}</p><div class="err" id="er"></div><div class="acts"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="saveacct">Save</button></div>`);
   else if(M.t=='idview')sheet(`<h2>ID photo</h2><img src="${M.url}" alt="ID" style="width:100%;border-radius:10px"><div class="acts"><button class="btn" data-a="close">Close</button></div>`);
 }
 function toBlob(f,max){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=no;r.onload=()=>{const im=new Image();im.onerror=no;im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);c.toBlob(ok,'image/jpeg',.8)};im.src=r.result};r.readAsDataURL(f)})}
@@ -126,11 +132,12 @@ const fail=m=>{const e=$('#er');if(e)e.textContent=m};
 const gate=()=>{if(prof.verified)return true;if(ver&&ver.status=='pending')alert('Your ID is still being reviewed.');else open_('verify');return false};
 async function pick(id){
   S.tid=id;S.msgs=[];if(ch)sb.removeChannel(ch);
-  S.msgs=(await sb.from('messages').select('*').eq('thread_id',id).order('created_at')).data||[];
+  S.msgs=(await sb.from('messages').select('*').eq('thread_id',id).order('created_at')).data||[];const th0=S.threads.find(x=>x.id==id);if(th0&&unread(th0))seen(th0);
   ch=sb.channel('m'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'thread_id=eq.'+id},p=>{if(!S.msgs.some(x=>x.id==p.new.id)){S.msgs.push(p.new);main()}}).subscribe();
   main();
 }
 document.addEventListener('input',e=>{if(e.target.id=='q'){S.q=e.target.value;main()}});
+document.addEventListener('change',e=>{if(e.target.id=='loc'){S.loc=e.target.value;main()}});
 document.addEventListener('keydown',e=>{if(e.key=='Enter'&&e.target.id=='say')act('send',e.target)});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;if(b.classList.contains('scrim')&&e.target!==b)return;act(b.dataset.a,b)});
 async function act(a,b){
@@ -140,6 +147,8 @@ async function act(a,b){
   else if(a=='post'){if(gate())open_('post')}
   else if(a=='thread')pick(d.t);else if(a=='back'){S.tid=null;main()}
   else if(a=='del'){await sb.from('items').delete().eq('id',d.id);S.modal=null;await load();render()}
+  else if(a=='given'){if(confirm('Mark this item as given away? It will be removed from the catalogue.')){await sb.from('items').update({status:'given'}).eq('id',d.id);S.modal=null;await load();render()}}
+  else if(a=='saveacct'){const n=$('#a-n').value.trim();if(!n)return fail('Enter a display name.');const r=await sb.from('profiles').update({name:n,city:$('#a-c').value.trim()}).eq('id',me.id);if(r.error)return fail('Could not save. Try again.');S.modal=null;await load();render()}
   else if(a=='msg'){
     if(!gate())return;const i=S.items.find(x=>x.id==d.id);
     let t=S.threads.find(x=>x.item_id==i.id);
@@ -151,13 +160,13 @@ async function act(a,b){
     const r=await sb.from('messages').insert({thread_id:S.tid,body}).select().single();
     if(r.error){i.value=body;return}
     if(!S.msgs.some(x=>x.id==r.data.id))S.msgs.push(r.data);
-    await sb.from('threads').update({last_at:new Date().toISOString()}).eq('id',S.tid);main();
+    main();
   }
   else if(a=='savepost'){
-    const t=$('#f-t').value.trim();if(!t)return fail('Add a title for your item.');
+    const t=$('#f-t').value.trim();if(!t)return fail('Add a title for your item.');if(!$('#f-l').value.trim())return fail('Add your city or area.');
     let path=null;const f=$('#f-p').files[0];
     if(f){try{path=me.id+'/'+Date.now()+'.jpg';const u=await sb.storage.from('item-photos').upload(path,await toBlob(f,900),{contentType:'image/jpeg'});if(u.error)throw 0}catch(e){return fail('The photo could not be uploaded. Try another image.')}}
-    const r=await sb.from('items').insert({title:t,category:$('#f-c').value,condition:$('#f-d').value,description:$('#f-x').value.trim(),want:$('#f-w').value.trim(),photo_path:path});
+    const r=await sb.from('items').insert({title:t,category:$('#f-c').value,condition:$('#f-d').value,description:$('#f-x').value.trim(),want:$('#f-w').value.trim(),photo_path:path,city:$('#f-l').value.trim()});
     if(r.error)return fail('Could not post the item. Make sure your ID is verified.');
     S.modal=null;S.view='browse';await load();render();
   }
