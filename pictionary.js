@@ -2,13 +2,13 @@
 window.Game=(()=>{
 const WORDS="apple,house,bicycle,guitar,umbrella,book,chair,clock,tree,flower,fish,cat,dog,car,boat,phone,hat,shoes,pizza,cake,sun,moon,star,key,door,lamp,table,cup,bridge,mountain,rocket,camera,glasses,ring,balloon,candle,ladder,bed,bus,train,airplane,kite,drum,piano,pencil,scissors,teapot,television,watch,bag,spoon,bottle,cow,elephant,butterfly,snowman,rainbow,castle,robot".split(',');
 const TURNS=6,SECS=60,COLORS=['#1f2328','#e5484d','#3a6fe0','#2e9e5b','#f08c00','#8a4fd1'];
-let el,lobby,room,st='idle',G=null,cv,cx,buf=[],pen={c:COLORS[0],w:4},down=false,last=null,inviting=false,matchT,note='';
+let el,lobby,room,st='idle',G=null,cv,cx,buf=[],pen={c:COLORS[0],w:4},down=false,last=null,inviting=false,matchT,note='',inv=false;
 const q=s=>el.querySelector(s),name=()=>(typeof prof!=='undefined'&&prof.name)||'Player',nm=id=>id===me.id?'You':(G.players.find(p=>p.id===id)?.name||'Player');
 const css=document.createElement('style');css.textContent=`.gbox{max-width:420px;margin:40px auto;text-align:center}.gp{max-width:820px;margin:0 auto}.gh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-weight:600}.gtime{color:var(--acc)}.gword{text-align:center;font-size:22px;letter-spacing:.15em;margin:10px 0;min-height:34px}#gc{width:100%;aspect-ratio:8/5;background:#fff;border:1px solid var(--line);border-radius:14px;touch-action:none;display:block;cursor:crosshair}.gt{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}.gsw{width:28px;height:28px;border-radius:50%;border:2px solid var(--line);padding:0}.glog{margin-top:10px;max-height:110px;overflow:auto;color:var(--mute);font-size:14px}.gin{display:flex;gap:8px;margin-top:10px}.gl{margin-top:14px}`;document.head.append(css);
 
 function ui(){
   if(st=='idle')el.innerHTML=`<div class="gbox"><h1>Pictionary</h1><p class="sub">${note||'Get matched with a random member who is online right now. Take turns drawing and guessing.'}</p><button class="btn" data-g="find">Find a player</button></div>`;
-  else if(st=='search')el.innerHTML=`<div class="gbox"><h1>Looking for a player…</h1><p class="sub">Keep this page open. The game starts as soon as someone else joins.</p><button class="btn ghost" data-g="cancel">Cancel</button></div>`;
+  else if(st=='search')el.innerHTML=`<div class="gbox"><h1>${inv?"Waiting for your friend…":"Looking for a player…"}</h1><p class="sub">${inv?"The game starts as soon as they join. Keep this page open.":"Keep this page open. The game starts as soon as someone else joins."}</p><button class="btn ghost" data-g="cancel">Cancel</button></div>`;
   else if(st=='end'){const s=G?G.players.map(p=>`<p><b>${esc(nm(p.id))}</b>: ${G.scores[p.id]}</p>`).join(''):'';const w=G&&[...G.players].sort((a,b)=>G.scores[b.id]-G.scores[a.id])[0];
     el.innerHTML=`<div class="gbox"><h1>${G&&G.scores[G.players[0].id]==G.scores[G.players[1].id]?"It's a tie":w&&w.id==me.id?'You won!':'Game over'}</h1>${s}<p class="sub">${esc(note)}</p><button class="btn" data-g="again">Play again</button> <button class="btn ghost" data-g="leave">Back</button></div>`}
   else{
@@ -77,7 +77,7 @@ function enterRoom(id){
   ['turn','draw','clear','guess','result'].forEach(ev=>room.on('broadcast',{event:ev},({payload})=>onEv(ev,payload)));
   room.subscribe(s=>{if(s=='SUBSCRIBED')room.track({name:name()})});
   lobby&&lobby.track({name:name(),t:Date.now(),s:'busy'});setTimeout(leaveLobby,3000);
-  matchT=setTimeout(()=>{if(!G){cleanup();startSearch()}},12000);
+  const m=inv;matchT=setTimeout(()=>{if(G)return;cleanup();if(m){st='idle';note='The invite expired. Try again from Messages.';ui()}else startSearch()},m?120000:12000);
 }
 function check(){
   if(room||inviting||!lobby)return;
@@ -92,7 +92,7 @@ function startSearch(){
   lobby.subscribe(s=>{if(s=='SUBSCRIBED')lobby.track({name:name(),t:Date.now(),s:'waiting'})});
 }
 function leaveLobby(){if(lobby){sb.removeChannel(lobby);lobby=null}}
-function cleanup(){clearTimeout(matchT);if(room){sb.removeChannel(room);room=null}leaveLobby();G=null;inviting=false;down=false;buf=[]}
+function cleanup(){clearTimeout(matchT);if(room){sb.removeChannel(room);room=null}leaveLobby();G=null;inv=false;inviting=false;down=false;buf=[]}
 setInterval(()=>{
   if(!G||st!='play'||!q('#gt'))return;
   if(G.phase=='draw'){const r=Math.max(0,Math.ceil((G.endAt-Date.now())/1000));q('#gt').textContent=r+'s';if(r==0&&G.drawer==me.id)finish(false)}else q('#gt').textContent='';
@@ -108,5 +108,5 @@ function click(e){
   else if(a=='skip'){if(G&&G.drawer==me.id)finish(false)}
   else if(a=='guess')guess();
 }
-return{show(){el=document.getElementById('game');if(!el.dataset.i){el.dataset.i=1;el.addEventListener('click',click);ui()}}};
+return{joinRoom(id){if(!/^[0-9a-f-]{36}$/.test(id))return;if(G&&st=='play'&&!confirm('Leave your current game to join this one?'))return;cleanup();inv=true;st='search';ui();enterRoom(id)},show(){el=document.getElementById('game');if(!el.dataset.i){el.dataset.i=1;el.addEventListener('click',click);ui()}}};
 })();

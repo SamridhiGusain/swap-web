@@ -44,6 +44,7 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5484d;margin-left:6px;vertical-align:middle}.chat,.log,.tl{min-height:0}.msgs{grid-template-rows:minmax(0,1fr)}.acts{flex-wrap:wrap}select.loc{width:auto;min-width:150px}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}.att{display:block;max-width:100%;max-height:260px;border-radius:10px;margin-bottom:4px}.m a.file{color:inherit;text-decoration:underline}
 select{-webkit-appearance:none;appearance:none;padding-right:38px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238a9099' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:12px 8px;text-overflow:ellipsis}
+.m .btn{background:var(--sf);color:var(--ink);border:0;margin-top:6px}
 @media (max-width:1100px){.brand small{display:none}}
 @media (max-width:700px){header .wrap{gap:4px 6px}.pill,.brand small{display:none}.tab{padding:8px}.msgs{grid-template-columns:1fr}.msgs.has-t .tl{display:none}.msgs:not(.has-t) .chat{display:none}.back{display:block}}
 </style></head><body>
@@ -63,10 +64,11 @@ const mySeen=t=>new Date(t.owner===me.id?t.owner_seen:t.buyer_seen),unread=t=>t.
 async function seen(t){t[t.owner===me.id?'owner_seen':'buyer_seen']=new Date().toISOString();await sb.rpc('mark_seen',{tid:t.id})}
 async function signAll(){const ps=S.msgs.filter(x=>x.file_path&&!S.urls[x.file_path]).map(x=>x.file_path);if(!ps.length)return;const r=await sb.storage.from('chat-files').createSignedUrls(ps,3600);(r.data||[]).forEach(o=>{if(o.signedUrl)S.urls[o.path]=o.signedUrl})}
 const kb=n=>n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
-const att=x=>{if(!x.file_path)return'';const u=S.urls[x.file_path],t=x.file_type||'';if(!u)return'<div>Loading attachment…</div>';
+const att=x=>{if(x.file_type=='pictionary'){const fr=Date.now()-new Date(x.created_at)<300000,b=fr?`<button class="btn sm" data-a="joininv" data-r="${esc(x.file_name)}">${x.sender===me.id?'Open game':'Join game'}</button>`:'<div class="note">Invite expired</div>';return `<div>${x.sender===me.id?'You invited them to play Pictionary.':'Invited you to play Pictionary.'}</div>${b}`}if(!x.file_path)return'';const u=S.urls[x.file_path],t=x.file_type||'';if(!u)return'<div>Loading attachment…</div>';
   if(t.startsWith('image/'))return `<a href="${u}" target="_blank" rel="noopener"><img class="att" src="${u}" alt="${esc(x.file_name)}" onload="const l=document.getElementById('log');if(l)l.scrollTop=l.scrollHeight"></a>`;
   if(t.startsWith('video/'))return `<video class="att" src="${u}" controls preload="metadata"></video>`;
   return `<a class="file" href="${u}" target="_blank" rel="noopener">${esc(x.file_name)} (${kb(x.file_size||0)})</a>`};
+function playWith(id){S.view='play';render();Game.joinRoom(id)}
 async function sendFile(f){
   if(!f||!S.tid)return;if(f.size>26214400)return alert('Files can be up to 25 MB.');
   const b=$('#attb');if(b){b.textContent='Sending…';b.disabled=true}
@@ -119,8 +121,8 @@ function main(){keep(()=>{
     const t=S.threads.find(x=>x.id==S.tid),o=t&&(t.owner===me.id?t.buyer:t.owner);
     m.innerHTML=`<h1>Messages</h1><p class="sub">Private conversations about items. Only the two of you can see them.</p>
     <div class="msgs ${S.tid?'has-t':''}"><div class="tl">${S.threads.length?S.threads.map(x=>`<button class="th" data-a="thread" data-t="${x.id}" aria-current="${x.id===S.tid}"><b>${esc(x.items?.title)}${unread(x)?'<span class="dot" aria-label="New message"></span>':''}</b><span>${esc(nm(x.owner===me.id?x.buyer:x.owner))}</span></button>`).join(''):'<div class="none">No conversations yet. Open an item in Browse and tap Message.</div>'}</div>
-    <div class="chat">${t?`<div class="ch"><button class="btn ghost sm back" data-a="back">Back</button><div><b>${esc(t.items?.title)}</b><div class="note" style="margin:0">with ${esc(nm(o))}</div></div></div>
-    <div class="log" id="log">${S.msgs.length?S.msgs.map(x=>`<div class="m ${x.sender===me.id?'me':''}">${att(x)}${x.body?`<div>${esc(x.body)}</div>`:''}</div>`).join(''):'<div class="none">Say hello and propose a swap.</div>'}</div>
+    <div class="chat">${t?`<div class="ch"><button class="btn ghost sm back" data-a="back">Back</button><div><b>${esc(t.items?.title)}</b><div class="note" style="margin:0">with ${esc(nm(o))}</div></div><button class="btn ghost sm" data-a="invite" style="margin-left:auto">Play Pictionary</button></div>
+    <div class="log" id="log">${S.msgs.length?S.msgs.map(x=>`<div class="m ${x.sender===me.id?'me':''}">${att(x)}${x.body&&x.file_type!='pictionary'?`<div>${esc(x.body)}</div>`:''}</div>`).join(''):'<div class="none">Say hello and propose a swap.</div>'}</div>
     <div class="send"><input id="att" type="file" hidden><button class="btn ghost" id="attb" data-a="attach" aria-label="Attach an image, video or file">Attach</button><input id="say" placeholder="Write a message" aria-label="Message"><button class="btn" data-a="send">Send</button></div>`:'<div class="none">Select a conversation.</div>'}</div></div>`;
     const l=$('#log');if(l)l.scrollTop=l.scrollHeight;
   }
@@ -166,6 +168,8 @@ async function act(a,b){
   else if(a=='post'){if(gate())open_('post')}
   else if(a=='thread')pick(d.t);else if(a=='back'){S.tid=null;main()}
   else if(a=='del'){await sb.from('items').delete().eq('id',d.id);S.modal=null;await load();render()}
+  else if(a=='invite'){if(!gate()||!S.tid)return;const id=crypto.randomUUID(),r=await sb.from('messages').insert({thread_id:S.tid,body:'Pictionary invite',file_type:'pictionary',file_name:id}).select().single();if(r.error)return alert('Could not send the invite. Try again.');if(!S.msgs.some(x=>x.id==r.data.id))S.msgs.push(r.data);playWith(id)}
+  else if(a=='joininv')playWith(d.r);
   else if(a=='edit')open_('post',{id:d.id});
   else if(a=='attach')$('#att').click();
   else if(a=='given'){if(confirm('Mark this item as given away? It will be removed from the catalogue.')){await sb.from('items').update({status:'given'}).eq('id',d.id);S.modal=null;await load();render()}}
