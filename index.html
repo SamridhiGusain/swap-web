@@ -42,9 +42,11 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
 .send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}.none{margin:auto;color:var(--mute);padding:20px;text-align:center}
 .rv{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5484d;margin-left:6px;vertical-align:middle}.chat,.log,.tl{min-height:0}.msgs{grid-template-rows:minmax(0,1fr)}.acts{flex-wrap:wrap}select.loc{width:auto;min-width:150px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}.att{display:block;max-width:100%;max-height:260px;border-radius:10px;margin-bottom:4px}.m a.file{color:inherit;text-decoration:underline}
+@media (max-width:1100px){.brand small{display:none}}
 @media (max-width:700px){header .wrap{gap:4px 6px}.pill,.brand small{display:none}.tab{padding:8px}.msgs{grid-template-columns:1fr}.msgs.has-t .tl{display:none}.msgs:not(.has-t) .chat{display:none}.back{display:block}}
 </style></head><body>
-<header><div class="wrap"><div class="brand">Swap<small>Community driven space to share, love and care</small></div><nav id="nav"></nav><span id="vs" class="pill"></span><button class="tab" id="acct">Account</button><button class="tab" id="out">Sign out</button></div></header>
+<header><div class="wrap"><div class="brand">Swap<small>Community driven space to share, love and care</small></div><div class="bar"><nav id="nav"></nav><span id="vs" class="pill"></span><button class="tab" id="acct">Account</button><button class="tab" id="out">Sign out</button></div></div></header>
 <main><div class="wrap" id="main"></div></main><div id="modal"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
@@ -53,11 +55,27 @@ const CATS=["Electronics","Books","Clothing & accessories","Home & kitchen","Fur
 const CONDS=["New","Like new","Good","Used"],IDS=["Aadhaar","Driving licence","PAN card","Passport"];
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sb=supabase.createClient(CFG.url,CFG.key);
-const S={items:[],threads:[],pend:[],view:'browse',cat:'All',q:'',tid:null,msgs:[],modal:null,loc:'All'};
+const S={items:[],threads:[],pend:[],view:'browse',cat:'All',q:'',tid:null,msgs:[],modal:null,loc:'All',urls:{}};
 let me,prof={},ver=null,P={},ch=null;
 const nm=id=>id===me.id?'You':(P[id]?.name||'Member'),pu=p=>p?sb.storage.from('item-photos').getPublicUrl(p).data.publicUrl:'';
 const mySeen=t=>new Date(t.owner===me.id?t.owner_seen:t.buyer_seen),unread=t=>t.last_sender&&t.last_sender!==me.id&&new Date(t.last_at)>mySeen(t),unreadAny=()=>S.threads.some(unread);
 async function seen(t){t[t.owner===me.id?'owner_seen':'buyer_seen']=new Date().toISOString();await sb.rpc('mark_seen',{tid:t.id})}
+async function signAll(){const ps=S.msgs.filter(x=>x.file_path&&!S.urls[x.file_path]).map(x=>x.file_path);if(!ps.length)return;const r=await sb.storage.from('chat-files').createSignedUrls(ps,3600);(r.data||[]).forEach(o=>{if(o.signedUrl)S.urls[o.path]=o.signedUrl})}
+const kb=n=>n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+const att=x=>{if(!x.file_path)return'';const u=S.urls[x.file_path],t=x.file_type||'';if(!u)return'<div>Loading attachment…</div>';
+  if(t.startsWith('image/'))return `<a href="${u}" target="_blank" rel="noopener"><img class="att" src="${u}" alt="${esc(x.file_name)}" onload="const l=document.getElementById('log');if(l)l.scrollTop=l.scrollHeight"></a>`;
+  if(t.startsWith('video/'))return `<video class="att" src="${u}" controls preload="metadata"></video>`;
+  return `<a class="file" href="${u}" target="_blank" rel="noopener">${esc(x.file_name)} (${kb(x.file_size||0)})</a>`};
+async function sendFile(f){
+  if(!f||!S.tid)return;if(f.size>26214400)return alert('Files can be up to 25 MB.');
+  const b=$('#attb');if(b){b.textContent='Sending…';b.disabled=true}
+  const path=S.tid+'/'+Date.now()+'-'+f.name.replace(/[^\w.\-]+/g,'_').slice(-80),cap=($('#say')?.value||'').trim();
+  const u=await sb.storage.from('chat-files').upload(path,f,{contentType:f.type||'application/octet-stream'});
+  if(u.error){alert('Upload failed. Try again.');return main()}
+  const r=await sb.from('messages').insert({thread_id:S.tid,body:cap,file_path:path,file_name:f.name,file_type:f.type||'',file_size:f.size}).select().single();
+  if(!r.error&&!S.msgs.some(x=>x.id==r.data.id)){S.msgs.push(r.data);await signAll()}
+  main();
+}
 const vlabel=()=>prof.verified?'ID verified':ver?(ver.status=='rejected'?'ID rejected – resubmit':'ID under review'):'ID needed';
 
 async function init(){
@@ -101,8 +119,8 @@ function main(){keep(()=>{
     m.innerHTML=`<h1>Messages</h1><p class="sub">Private conversations about items. Only the two of you can see them.</p>
     <div class="msgs ${S.tid?'has-t':''}"><div class="tl">${S.threads.length?S.threads.map(x=>`<button class="th" data-a="thread" data-t="${x.id}" aria-current="${x.id===S.tid}"><b>${esc(x.items?.title)}${unread(x)?'<span class="dot" aria-label="New message"></span>':''}</b><span>${esc(nm(x.owner===me.id?x.buyer:x.owner))}</span></button>`).join(''):'<div class="none">No conversations yet. Open an item in Browse and tap Message.</div>'}</div>
     <div class="chat">${t?`<div class="ch"><button class="btn ghost sm back" data-a="back">Back</button><div><b>${esc(t.items?.title)}</b><div class="note" style="margin:0">with ${esc(nm(o))}</div></div></div>
-    <div class="log" id="log">${S.msgs.length?S.msgs.map(x=>`<div class="m ${x.sender===me.id?'me':''}">${esc(x.body)}</div>`).join(''):'<div class="none">Say hello and propose a swap.</div>'}</div>
-    <div class="send"><input id="say" placeholder="Write a message" aria-label="Message"><button class="btn" data-a="send">Send</button></div>`:'<div class="none">Select a conversation.</div>'}</div></div>`;
+    <div class="log" id="log">${S.msgs.length?S.msgs.map(x=>`<div class="m ${x.sender===me.id?'me':''}">${att(x)}${x.body?`<div>${esc(x.body)}</div>`:''}</div>`).join(''):'<div class="none">Say hello and propose a swap.</div>'}</div>
+    <div class="send"><input id="att" type="file" hidden><button class="btn ghost" id="attb" data-a="attach" aria-label="Attach an image, video or file">Attach</button><input id="say" placeholder="Write a message" aria-label="Message"><button class="btn" data-a="send">Send</button></div>`:'<div class="none">Select a conversation.</div>'}</div></div>`;
     const l=$('#log');if(l)l.scrollTop=l.scrollHeight;
   }
 })}
@@ -132,12 +150,12 @@ const fail=m=>{const e=$('#er');if(e)e.textContent=m};
 const gate=()=>{if(prof.verified)return true;if(ver&&ver.status=='pending')alert('Your ID is still being reviewed.');else open_('verify');return false};
 async function pick(id){
   S.tid=id;S.msgs=[];if(ch)sb.removeChannel(ch);
-  S.msgs=(await sb.from('messages').select('*').eq('thread_id',id).order('created_at')).data||[];const th0=S.threads.find(x=>x.id==id);if(th0&&unread(th0))seen(th0);
-  ch=sb.channel('m'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'thread_id=eq.'+id},p=>{if(!S.msgs.some(x=>x.id==p.new.id)){S.msgs.push(p.new);main()}}).subscribe();
+  S.msgs=(await sb.from('messages').select('*').eq('thread_id',id).order('created_at')).data||[];const th0=S.threads.find(x=>x.id==id);if(th0&&unread(th0))seen(th0);await signAll();
+  ch=sb.channel('m'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'thread_id=eq.'+id},async p=>{if(!S.msgs.some(x=>x.id==p.new.id)){S.msgs.push(p.new);await signAll();main()}}).subscribe();
   main();
 }
 document.addEventListener('input',e=>{if(e.target.id=='q'){S.q=e.target.value;main()}});
-document.addEventListener('change',e=>{if(e.target.id=='loc'){S.loc=e.target.value;main()}});
+document.addEventListener('change',e=>{if(e.target.id=='loc'){S.loc=e.target.value;main()}if(e.target.id=='att')sendFile(e.target.files[0])});
 document.addEventListener('keydown',e=>{if(e.key=='Enter'&&e.target.id=='say')act('send',e.target)});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;if(b.classList.contains('scrim')&&e.target!==b)return;act(b.dataset.a,b)});
 async function act(a,b){
@@ -147,6 +165,7 @@ async function act(a,b){
   else if(a=='post'){if(gate())open_('post')}
   else if(a=='thread')pick(d.t);else if(a=='back'){S.tid=null;main()}
   else if(a=='del'){await sb.from('items').delete().eq('id',d.id);S.modal=null;await load();render()}
+  else if(a=='attach')$('#att').click();
   else if(a=='given'){if(confirm('Mark this item as given away? It will be removed from the catalogue.')){await sb.from('items').update({status:'given'}).eq('id',d.id);S.modal=null;await load();render()}}
   else if(a=='saveacct'){const n=$('#a-n').value.trim();if(!n)return fail('Enter a display name.');const r=await sb.from('profiles').update({name:n,city:$('#a-c').value.trim()}).eq('id',me.id);if(r.error)return fail('Could not save. Try again.');S.modal=null;await load();render()}
   else if(a=='msg'){
