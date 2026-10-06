@@ -133,12 +133,12 @@ function modal(){
     sheet(`<div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><h2>${esc(i.title)}</h2><p class="note" style="margin:0 0 12px">${esc(i.condition)} · ${esc(i.category)}${i.city?' · '+esc(i.city):''}</p>
     <p style="margin:0 0 12px">${esc(i.description||'No description.')}</p><p style="margin:0 0 4px"><b>Wants:</b> ${esc(i.want||'open to offers')}</p>
     <p class="note" style="margin:0">Posted by ${esc(nm(i.owner))}${P[i.owner]?.verified?' · ID verified':''}</p>
-    <div class="acts"><button class="btn ghost" data-a="close">Close</button>${mine?`<button class="btn" data-a="given" data-id="${i.id}">Mark as given away</button><button class="btn ghost" data-a="del" data-id="${i.id}">Remove</button>`:`<button class="btn" data-a="msg" data-id="${i.id}">Message</button>`}</div>`);}
-  else if(M.t=='post')sheet(`<h2>Post an item</h2><p class="note" style="margin:0">You don't have to swap with the same person: give your item to one member and take something from another.</p><label for="f-t">Title</label><input id="f-t" maxlength="80" placeholder="e.g. Acoustic guitar">
-    <label for="f-c">Category</label><select id="f-c">${CATS.map(c=>`<option>${esc(c)}</option>`).join('')}</select><label for="f-d">Condition</label><select id="f-d">${CONDS.map(c=>`<option>${c}</option>`).join('')}</select>
-    <label for="f-x">Description</label><textarea id="f-x" maxlength="500"></textarea><label for="f-w">What would you like in return?</label><input id="f-w" maxlength="100" placeholder="e.g. Books, or open to offers">
-    <label for="f-l">City or area</label><input id="f-l" maxlength="60" value="${esc(prof.city)}" placeholder="e.g. Ludhiana"><label for="f-p">Photo (optional)</label><input id="f-p" type="file" accept="image/*"><div class="err" id="er"></div>
-    <div class="acts"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="savepost">Post item</button></div>`);
+    <div class="acts"><button class="btn ghost" data-a="close">Close</button>${mine?`<button class="btn ghost" data-a="edit" data-id="${i.id}">Edit</button><button class="btn" data-a="given" data-id="${i.id}">Mark as given away</button><button class="btn ghost" data-a="del" data-id="${i.id}">Remove</button>`:`<button class="btn" data-a="msg" data-id="${i.id}">Message</button>`}</div>`);}
+  else if(M.t=='post'){const e=M.id?S.items.find(x=>x.id==M.id)||{}:{};sheet(`<h2>${M.id?'Edit item':'Post an item'}</h2><p class="note" style="margin:0">You don't have to swap with the same person: give your item to one member and take something from another.</p><label for="f-t">Title</label><input id="f-t" maxlength="80" value="${esc(e.title)}" placeholder="e.g. Acoustic guitar">
+    <label for="f-c">Category</label><select id="f-c">${CATS.map(c=>`<option${e.category==c?' selected':''}>${esc(c)}</option>`).join('')}</select><label for="f-d">Condition</label><select id="f-d">${CONDS.map(c=>`<option${e.condition==c?' selected':''}>${c}</option>`).join('')}</select>
+    <label for="f-x">Description</label><textarea id="f-x" maxlength="500">${esc(e.description)}</textarea><label for="f-w">What would you like in return?</label><input id="f-w" maxlength="100" value="${esc(e.want)}" placeholder="e.g. Books, or open to offers">
+    <label for="f-l">City or area</label><input id="f-l" maxlength="60" value="${esc(M.id?e.city:prof.city)}" placeholder="e.g. Ludhiana"><label for="f-p">${M.id?'Replace photo (optional)':'Photo (optional)'}</label><input id="f-p" type="file" accept="image/*"><div class="err" id="er"></div>
+    <div class="acts"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="savepost">${M.id?'Save changes':'Post item'}</button></div>`);}
   else if(M.t=='verify')sheet(`<h2>Verify your identity</h2><p class="note" style="margin:0">Submit one government ID. An admin reviews it, usually within a day.</p>
     <label for="v-t">ID type</label><select id="v-t">${IDS.map(c=>`<option>${c}</option>`).join('')}</select><label for="v-n">Last 4 characters of the ID number</label><input id="v-n" maxlength="4" autocomplete="off">
     <label for="v-p">Photo of the ID</label><input id="v-p" type="file" accept="image/*"><p class="note">For Aadhaar, cover the first 8 digits before uploading. Your ID photo is private: only you and the reviewing admin can open it.</p>
@@ -166,6 +166,7 @@ async function act(a,b){
   else if(a=='post'){if(gate())open_('post')}
   else if(a=='thread')pick(d.t);else if(a=='back'){S.tid=null;main()}
   else if(a=='del'){await sb.from('items').delete().eq('id',d.id);S.modal=null;await load();render()}
+  else if(a=='edit')open_('post',{id:d.id});
   else if(a=='attach')$('#att').click();
   else if(a=='given'){if(confirm('Mark this item as given away? It will be removed from the catalogue.')){await sb.from('items').update({status:'given'}).eq('id',d.id);S.modal=null;await load();render()}}
   else if(a=='saveacct'){const n=$('#a-n').value.trim();if(!n)return fail('Enter a display name.');const r=await sb.from('profiles').update({name:n,city:$('#a-c').value.trim()}).eq('id',me.id);if(r.error)return fail('Could not save. Try again.');S.modal=null;await load();render()}
@@ -186,9 +187,9 @@ async function act(a,b){
     const t=$('#f-t').value.trim();if(!t)return fail('Add a title for your item.');if(!$('#f-l').value.trim())return fail('Add your city or area.');
     let path=null;const f=$('#f-p').files[0];
     if(f){try{path=me.id+'/'+Date.now()+'.jpg';const u=await sb.storage.from('item-photos').upload(path,await toBlob(f,900),{contentType:'image/jpeg'});if(u.error)throw 0}catch(e){return fail('The photo could not be uploaded. Try another image.')}}
-    const r=await sb.from('items').insert({title:t,category:$('#f-c').value,condition:$('#f-d').value,description:$('#f-x').value.trim(),want:$('#f-w').value.trim(),photo_path:path,city:$('#f-l').value.trim()});
+    const rec={title:t,category:$('#f-c').value,condition:$('#f-d').value,description:$('#f-x').value.trim(),want:$('#f-w').value.trim(),city:$('#f-l').value.trim()},ed=S.modal.id;if(path)rec.photo_path=path;const r=ed?await sb.from('items').update(rec).eq('id',ed):await sb.from('items').insert(rec);
     if(r.error)return fail('Could not post the item. Make sure your ID is verified.');
-    S.modal=null;S.view='browse';await load();render();
+    S.modal=null;if(!ed)S.view='browse';await load();render();
   }
   else if(a=='saveid'){
     const n=$('#v-n').value.trim(),f=$('#v-p').files[0];
