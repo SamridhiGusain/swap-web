@@ -48,7 +48,7 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px;background-ima
 @media (max-width:700px){header .wrap{gap:4px 6px}.pill,.brand small{display:none}.tab{padding:8px}.msgs{grid-template-columns:1fr}.msgs.has-t .tl{display:none}.msgs:not(.has-t) .chat{display:none}.back{display:block}}
 </style></head><body>
 <header><div class="wrap"><div class="brand">Swap<small>Community driven space to share, love and care</small></div><div class="bar"><nav id="nav"></nav><span id="vs" class="pill"></span><button class="tab" id="acct">Account</button><button class="tab" id="out">Sign out</button></div></div></header>
-<main><div class="wrap" id="main"></div></main><div id="modal"></div>
+<main><div class="wrap" id="main"></div><div class="wrap" id="game" hidden></div></main><div id="modal"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script>
@@ -92,9 +92,9 @@ async function load(){
   if(prof.is_admin)S.pend=(await sb.from('verifications').select('*').eq('status','pending')).data||[];
 }
 $('#acct').onclick=()=>open_('acct');
-$('#out').onclick=async()=>{await sb.auth.signOut();location.href='login.html'};
+$('#out').onclick=async()=>{if(!confirm('Are you sure you want to sign out?'))return;await sb.auth.signOut();location.href='login.html'};
 function render(k){
-  const tabs=[['browse','Browse'],['mine','My items'],['messages','Messages']];if(prof.is_admin)tabs.push(['review','Review IDs']);
+  const tabs=[['browse','Browse'],['mine','My items'],['messages','Messages'],['play','Play']];if(prof.is_admin)tabs.push(['review','Review IDs']);
   $('#nav').innerHTML=tabs.map(([v,l])=>`<button class="tab" data-a="nav" data-v="${v}" aria-current="${S.view===v}">${l}${v=='messages'&&unreadAny()?'<span class="dot" aria-label="New messages"></span>':''}</button>`).join('');
   const v=$('#vs');v.textContent=vlabel();v.className='pill'+(prof.verified?' ok':'');v.onclick=()=>{if(!prof.verified&&!(ver&&ver.status=='pending'))open_('verify')};
   main();if(!k)modal();
@@ -102,7 +102,7 @@ function render(k){
 function keep(f){const a=document.activeElement,id=a&&a.id,val=a&&a.value,p=a&&a.selectionStart;f();if(id=='q'||id=='say'){const e=document.getElementById(id);if(e){e.value=val;e.focus();try{e.setSelectionRange(p,p)}catch(_){}}}}
 const card=i=>`<button class="card" data-a="open" data-id="${i.id}"><div class="media">${i.photo_path?`<img src="${pu(i.photo_path)}" alt="">`:esc(i.category)}</div><div class="cb"><b>${esc(i.title)}</b><span>${esc(i.condition)} · ${esc(i.category)}${i.city?' · '+esc(i.city):''}</span><span>Wants: ${esc(i.want||'open to offers')}</span></div></button>`;
 function main(){keep(()=>{
-  const m=$('#main');
+  const m=$('#main');$('#game').hidden=S.view!='play';if(S.view=='play'){m.innerHTML='';window.Game&&Game.show();return}
   const bn=prof.verified?'':`<div class="banner"><span>${ver&&ver.status=='pending'?'Your ID is being reviewed. You can browse until it is approved.':'Verify your ID to post items and send messages.'}</span>${ver&&ver.status=='pending'?'':'<button class="btn sm" data-a="verify">Verify ID</button>'}</div>`;
   if(S.view=='browse'){
     const cities=[...new Map(S.items.filter(i=>i.city&&i.status!='given').map(i=>[i.city.trim().toLowerCase(),i.city.trim()])).values()].sort(),q=S.q.toLowerCase(),l=S.items.filter(i=>i.status!='given'&&(S.cat=='All'||i.category==S.cat)&&(S.loc=='All'||(i.city||'').trim().toLowerCase()==S.loc.toLowerCase())&&(!q||(i.title+' '+(i.description||'')+' '+(i.want||'')).toLowerCase().includes(q)));
@@ -204,4 +204,5 @@ async function act(a,b){
   else if(a=='rev'){const r=await sb.rpc('review_verification',{target:d.u,approve:d.ok=='1'});if(r.error)return alert(r.error.message);await load();render()}
 }
 init();
-</script></body></html>
+</script>
+<script src="pictionary.js"></script></body></html>
