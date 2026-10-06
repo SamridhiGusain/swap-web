@@ -1,3 +1,3 @@
-# Swap – setup and hosting
+# Swap
 
 a place to swap and share things.
